@@ -53,7 +53,32 @@ logger = logging.getLogger(__name__)
     VENUE,
     REG_SERVICE,
     PHOTO,
-) = range(10)
+    CONFIRM,
+    EDIT_DATE,
+    EDIT_CITY,
+    EDIT_EVENT_NAME,
+    EDIT_EXHIBITION_BLOCK,
+    EDIT_JUDGES,
+    EDIT_CLUB_SITE,
+    EDIT_CONTACTS,
+    EDIT_VENUE,
+    EDIT_REG_SERVICE,
+    EDIT_PHOTO,
+) = range(20)
+
+# соответствие callback_data -> (state, prompt)
+EDIT_FIELDS = {
+    "edit_date": (EDIT_DATE, "📅 Отправь дату выставки (например: 1 и 2 января 2026 года)"),
+    "edit_city": (EDIT_CITY, "📍 Укажи город и страну (например: Алмата, Казахстан)"),
+    "edit_event_name": (EDIT_EVENT_NAME, "🐕 Напиши название выставки (например: ИНТЕРНАЦИОНАЛЬНАЯ ВЫСТАВКА СОБАК)"),
+    "edit_exhibition_block": (EDIT_EXHIBITION_BLOCK, "Укажи название и блок выставок"),
+    "edit_judges": (EDIT_JUDGES, "👨‍⚖️ Укажи судей (каждый с новой строки или через запятую)"),
+    "edit_club_site": (EDIT_CLUB_SITE, "🌐 Ссылка на сайт/чат клуба (например: t.me/...)"),
+    "edit_contacts": (EDIT_CONTACTS, "📞 Контакты (телефон / telegram / email)"),
+    "edit_venue": (EDIT_VENUE, "🏛 Место проведения (адрес)"),
+    "edit_reg_service": (EDIT_REG_SERVICE, "🌐 Сервис регистрации (например: zooportal.pro)"),
+    "edit_photo": (EDIT_PHOTO, "📷 Отправь одно фото или нажми «❌ Без фото»"),
+}
 
 
 def _load_last_posts() -> dict:
@@ -112,6 +137,30 @@ def build_post_text(data: dict) -> str:
         f"🏛 Место проведения: {data['venue']}\n"
         f"🌐 Сервис регистрации: {data['reg_service']}"
     )
+
+
+async def _send_confirm_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """отправляет пользователю превью поста и кнопки Отправить / Изменить"""
+    data = context.user_data
+    chat_id = update.effective_chat.id
+    text = build_post_text(data)
+    has_photo = "photo_id" in data
+
+    if has_photo:
+        await context.bot.send_photo(chat_id=chat_id, photo=data["photo_id"], caption=text)
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=text)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Отправить", callback_data="confirm_send")],
+        [InlineKeyboardButton("✏️ Изменить", callback_data="confirm_edit")],
+    ])
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Так будет выглядеть пост. Нужно что-то изменить?",
+        reply_markup=keyboard,
+    )
+    return CONFIRM
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -227,7 +276,7 @@ async def reg_service(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return REG_SERVICE
     context.user_data["reg_service"] = val
     keyboard = InlineKeyboardMarkup.from_button(
-        InlineKeyboardButton("🖼️ Без фото", callback_data="post_no_photo")
+        InlineKeyboardButton("❌ Без фото", callback_data="post_no_photo")
     )
     await update.message.reply_text(
         "📷 Отправь одно фото для поста (только одно!)",
@@ -237,11 +286,12 @@ async def reg_service(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def no_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """обработка нажатия «без фото» — публикуем пост без картинки"""
+    """обработка нажатия «без фото» — пост без картинки, затем превью"""
     await update.callback_query.answer()
     context.user_data["no_photo"] = True
-    await update.effective_message.reply_text("Публикую пост без фото...")
-    return await finish_post(update, context)
+    context.user_data.pop("photo_id", None)
+    await update.effective_message.reply_text("Проверьте пост перед отправкой.")
+    return await _send_confirm_screen(update, context)
 
 
 async def _photo_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -250,20 +300,26 @@ async def _photo_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return PHOTO
 
 
+async def _edit_photo_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """напоминание при редактировании фото"""
+    await update.message.reply_text("Отправь фото или нажми «❌ Без фото»")
+    return EDIT_PHOTO
+
+
 async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """принимаем только одно фото — если уже есть, игнорируем лишние"""
     if "photo_id" in context.user_data:
         await update.message.reply_text(
-            "Фото уже добавлено. Лишние фото не принимаются — завершаю пост."
+            "Фото уже добавлено. Лишние фото не принимаются — показываю превью."
         )
-        return await finish_post(update, context)
+        return await _send_confirm_screen(update, context)
 
-    # первое фото — сохраняем file_id самого большого размера
     photo_obj = update.message.photo[-1]
     context.user_data["photo_id"] = photo_obj.file_id
+    context.user_data.pop("no_photo", None)
 
-    await update.message.reply_text("Фото принято. Публикую пост...")
-    return await finish_post(update, context)
+    await update.message.reply_text("Фото принято. Проверьте пост перед отправкой.")
+    return await _send_confirm_screen(update, context)
 
 
 def _reply_target(update: Update):
@@ -273,6 +329,90 @@ def _reply_target(update: Update):
     if update.callback_query:
         return update.callback_query.message
     return None
+
+
+def _confirm_edit_keyboard() -> InlineKeyboardMarkup:
+    """кнопки выбора поля для редактирования"""
+    buttons = [
+        [InlineKeyboardButton("📅 Дата", callback_data="edit_date")],
+        [InlineKeyboardButton("📍 Город", callback_data="edit_city")],
+        [InlineKeyboardButton("🐕 Название выставки", callback_data="edit_event_name")],
+        [InlineKeyboardButton("Блок выставок", callback_data="edit_exhibition_block")],
+        [InlineKeyboardButton("👨‍⚖️ Судьи", callback_data="edit_judges")],
+        [InlineKeyboardButton("🌐 Сайт клуба", callback_data="edit_club_site")],
+        [InlineKeyboardButton("📞 Контакты", callback_data="edit_contacts")],
+        [InlineKeyboardButton("🏛 Место проведения", callback_data="edit_venue")],
+        [InlineKeyboardButton("🌐 Сервис регистрации", callback_data="edit_reg_service")],
+        [InlineKeyboardButton("📷 Фото", callback_data="edit_photo")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+async def confirm_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """подтверждение: отправить пост в канал"""
+    await update.callback_query.answer()
+    return await finish_post(update, context)
+
+
+async def confirm_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """показать выбор поля для редактирования"""
+    await update.callback_query.answer()
+    await update.effective_message.reply_text(
+        "Что изменить?",
+        reply_markup=_confirm_edit_keyboard(),
+    )
+    return CONFIRM
+
+
+async def confirm_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """нажатие на конкретное поле для правки — переходим в состояние редактирования"""
+    await update.callback_query.answer()
+    data = update.callback_query.data
+    if data not in EDIT_FIELDS:
+        return CONFIRM
+    state, prompt = EDIT_FIELDS[data]
+    if state == EDIT_PHOTO:
+        keyboard = InlineKeyboardMarkup.from_button(
+            InlineKeyboardButton("❌ Без фото", callback_data="post_no_photo")
+        )
+        await update.effective_message.reply_text(prompt, reply_markup=keyboard)
+    else:
+        await update.effective_message.reply_text(prompt)
+    return state
+
+
+def _make_edit_text_handler(field_key: str, state: int):
+    """фабрика: обработчик ввода при редактировании одного текстового поля"""
+    async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        val = update.message.text.strip()
+        ok, err = _check_field_length(field_key, val)
+        if not ok:
+            await update.message.reply_text(err)
+            return state
+        context.user_data[field_key] = val
+        await update.message.reply_text("Изменено. Проверьте пост.")
+        return await _send_confirm_screen(update, context)
+    return handler
+
+
+async def edit_photo_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """принятие фото при редактировании поля «фото»"""
+    if "photo_id" in context.user_data:
+        await update.message.reply_text("Фото уже добавлено. Показываю превью.")
+        return await _send_confirm_screen(update, context)
+    context.user_data["photo_id"] = update.message.photo[-1].file_id
+    context.user_data.pop("no_photo", None)
+    await update.message.reply_text("Изменено. Проверьте пост.")
+    return await _send_confirm_screen(update, context)
+
+
+async def edit_photo_no_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """кнопка «без фото» при редактировании"""
+    await update.callback_query.answer()
+    context.user_data["no_photo"] = True
+    context.user_data.pop("photo_id", None)
+    await update.effective_message.reply_text("Изменено. Проверьте пост.")
+    return await _send_confirm_screen(update, context)
 
 
 async def finish_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -380,8 +520,26 @@ def main() -> None:
             PHOTO: [
                 MessageHandler(filters.PHOTO, photo),
                 CallbackQueryHandler(no_photo_callback, pattern="^post_no_photo$"),
-                # если пользователь шлёт текст вместо фото — напоминаем
                 MessageHandler(filters.TEXT & ~filters.COMMAND, _photo_reminder),
+            ],
+            CONFIRM: [
+                CallbackQueryHandler(confirm_send_callback, pattern="^confirm_send$"),
+                CallbackQueryHandler(confirm_edit_callback, pattern="^confirm_edit$"),
+                CallbackQueryHandler(confirm_edit_field_callback, pattern="^edit_"),
+            ],
+            EDIT_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("date", EDIT_DATE))],
+            EDIT_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("city", EDIT_CITY))],
+            EDIT_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("event_name", EDIT_EVENT_NAME))],
+            EDIT_EXHIBITION_BLOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("exhibition_block", EDIT_EXHIBITION_BLOCK))],
+            EDIT_JUDGES: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("judges", EDIT_JUDGES))],
+            EDIT_CLUB_SITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("club_site", EDIT_CLUB_SITE))],
+            EDIT_CONTACTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("contacts", EDIT_CONTACTS))],
+            EDIT_VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("venue", EDIT_VENUE))],
+            EDIT_REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("reg_service", EDIT_REG_SERVICE))],
+            EDIT_PHOTO: [
+                MessageHandler(filters.PHOTO, edit_photo_receive),
+                CallbackQueryHandler(edit_photo_no_photo_callback, pattern="^post_no_photo$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, _edit_photo_reminder),
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
