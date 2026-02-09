@@ -135,7 +135,8 @@ def build_post_text(data: dict) -> str:
         f"🌐 Сайт клуба: {data['club_site']}\n"
         f"📞 Контакты: {data['contacts']}\n"
         f"🏛 Место проведения: {data['venue']}\n"
-        f"🌐 Сервис регистрации: {data['reg_service']}"
+        f"🌐 Сервис регистрации: {data['reg_service']}\n\n"
+        f"@DogShowsRu_bot"
     )
 
 
