@@ -27,6 +27,9 @@ build/
 # docker
 *.log
 
+# данные бота (лимиты по пользователям)
+last_posts.json
+
 # misc
 .DS_Store
 Thumbs.db

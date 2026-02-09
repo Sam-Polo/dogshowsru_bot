@@ -1,7 +1,11 @@
 """
 телеграм бот для приёма постов о выставках собак и публикации в тгк
 """
+import json
 import logging
+import time
+from pathlib import Path
+
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -13,6 +17,22 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN, CHANNEL_ID
+
+# лимиты символов на поле (с запасом), итоговый caption в Telegram — до 1024
+FIELD_LIMITS = {
+    "date": 120,
+    "city": 120,
+    "event_name": 250,
+    "exhibition_block": 250,
+    "judges": 450,
+    "club_site": 200,
+    "contacts": 200,
+    "venue": 300,
+    "reg_service": 120,
+}
+CAPTION_MAX = 1024
+POST_COOLDOWN_SEC = 24 * 3600  # 1 раз в сутки
+LAST_POSTS_FILE = Path(__file__).resolve().parent / "last_posts.json"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -33,6 +53,47 @@ logger = logging.getLogger(__name__)
     REG_SERVICE,
     PHOTO,
 ) = range(10)
+
+
+def _load_last_posts() -> dict:
+    """загрузка времени последних постов по user_id"""
+    if not LAST_POSTS_FILE.exists():
+        return {}
+    try:
+        with open(LAST_POSTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_last_post(user_id: int) -> None:
+    """сохранить время поста пользователя"""
+    data = _load_last_posts()
+    data[str(user_id)] = time.time()
+    try:
+        with open(LAST_POSTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except OSError as e:
+        logger.warning("не удалось сохранить last_posts: %s", e)
+
+
+def _can_post(user_id: int) -> bool:
+    """можно ли пользователю отправить пост (прошло ли 24ч с последнего)"""
+    data = _load_last_posts()
+    last = data.get(str(user_id))
+    if last is None:
+        return True
+    return (time.time() - last) >= POST_COOLDOWN_SEC
+
+
+def _check_field_length(field_key: str, value: str) -> tuple[bool, str | None]:
+    """проверка длины поля: (ok, error_message)"""
+    limit = FIELD_LIMITS.get(field_key)
+    if limit is None:
+        return True, None
+    if len(value) > limit:
+        return False, f"Слишком длинный ввод. Максимум {limit} символов, у вас {len(value)}."
+    return True, None
 
 
 def build_post_text(data: dict) -> str:
@@ -61,13 +122,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["date"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("date", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return DATE
+    context.user_data["date"] = val
     await update.message.reply_text("📍 Укажи город и страну (например: Алмата, Казахстан)")
     return CITY
 
 
 async def city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["city"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("city", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return CITY
+    context.user_data["city"] = val
     await update.message.reply_text(
         "🐕 Напиши название выставки (например: ИНТЕРНАЦИОНАЛЬНАЯ ВЫСТАВКА СОБАК)"
     )
@@ -75,7 +146,12 @@ async def city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def event_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["event_name"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("event_name", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return EVENT_NAME
+    context.user_data["event_name"] = val
     await update.message.reply_text(
         "Укажи название и блок выставок"
     )
@@ -83,7 +159,12 @@ async def event_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def exhibition_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["exhibition_block"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("exhibition_block", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return EXHIBITION_BLOCK
+    context.user_data["exhibition_block"] = val
     await update.message.reply_text(
         "👨‍⚖️ Укажи судей (каждый с новой строки или через запятую)"
     )
@@ -91,31 +172,56 @@ async def exhibition_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def judges(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["judges"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("judges", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return JUDGES
+    context.user_data["judges"] = val
     await update.message.reply_text("🌐 Ссылка на сайт/чат клуба (например: t.me/...)")
     return CLUB_SITE
 
 
 async def club_site(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["club_site"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("club_site", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return CLUB_SITE
+    context.user_data["club_site"] = val
     await update.message.reply_text("📞 Контакты (телефон / telegram / email)")
     return CONTACTS
 
 
 async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["contacts"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("contacts", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return CONTACTS
+    context.user_data["contacts"] = val
     await update.message.reply_text("🏛 Место проведения (адрес)")
     return VENUE
 
 
 async def venue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["venue"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("venue", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return VENUE
+    context.user_data["venue"] = val
     await update.message.reply_text("🌐 Сервис регистрации (например: zooportal.pro)")
     return REG_SERVICE
 
 
 async def reg_service(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["reg_service"] = update.message.text.strip()
+    val = update.message.text.strip()
+    ok, err = _check_field_length("reg_service", val)
+    if not ok:
+        await update.message.reply_text(err)
+        return REG_SERVICE
+    context.user_data["reg_service"] = val
     await update.message.reply_text(
         "📷 Отправь одно фото для поста (только одно!)"
     )
@@ -157,6 +263,21 @@ async def finish_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     text = build_post_text(data)
+    if len(text) > CAPTION_MAX:
+        await update.message.reply_text(
+            f"Текст поста получился {len(text)} символов. В Telegram подпись к фото — не больше {CAPTION_MAX} символов. Сократите поля и начните заново /start"
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    user_id = update.effective_user.id if update.effective_user else None
+    if CHANNEL_ID and user_id is not None and not _can_post(user_id):
+        await update.message.reply_text(
+            "Один пост в канал можно отправить не чаще одного раза в 24 часа. Попробуйте позже."
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
     photo_id = data["photo_id"]
 
     try:
@@ -166,6 +287,8 @@ async def finish_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 photo=photo_id,
                 caption=text,
             )
+            if user_id is not None:
+                _save_last_post(user_id)
             await update.message.reply_text("✅ Пост опубликован в канал!")
         else:
             # если канал не настроен — показываем превью
