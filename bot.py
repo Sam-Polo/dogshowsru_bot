@@ -410,9 +410,7 @@ def _make_edit_text_handler(field_key: str, state: int):
 
 
 async def edit_photo_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """принятие фото при редактировании — затем два новых сообщения (превью + управление)"""
-    if "photo_id" in context.user_data:
-        return await _send_confirm_screen(update, context)
+    """принятие фото при редактировании — заменяем старое фото, затем два новых сообщения"""
     context.user_data["photo_id"] = update.message.photo[-1].file_id
     context.user_data.pop("no_photo", None)
     return await _send_confirm_screen(update, context)
