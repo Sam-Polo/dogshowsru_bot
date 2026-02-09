@@ -6,11 +6,12 @@ import logging
 import time
 from pathlib import Path
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ConversationHandler,
     ContextTypes,
     filters,
@@ -223,10 +224,22 @@ async def reg_service(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text(err)
         return REG_SERVICE
     context.user_data["reg_service"] = val
+    keyboard = InlineKeyboardMarkup.from_button(
+        InlineKeyboardButton("🖼️ Без фото", callback_data="post_no_photo")
+    )
     await update.message.reply_text(
-        "📷 Отправь одно фото для поста (только одно!)"
+        "📷 Отправь одно фото для поста (только одно!)",
+        reply_markup=keyboard,
     )
     return PHOTO
+
+
+async def no_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """обработка нажатия «без фото» — публикуем пост без картинки"""
+    await update.callback_query.answer()
+    context.user_data["no_photo"] = True
+    await update.effective_message.reply_text("Публикую пост без фото...")
+    return await finish_post(update, context)
 
 
 async def _photo_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -251,59 +264,79 @@ async def photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return await finish_post(update, context)
 
 
+def _reply_target(update: Update):
+    """сообщение, в чат которого отвечаем (для message или callback_query)"""
+    if update.message:
+        return update.message
+    if update.callback_query:
+        return update.callback_query.message
+    return None
+
+
 async def finish_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """публикация поста в тгк и завершение"""
     data = context.user_data
-    required = ["date", "city", "event_name", "exhibition_block", "judges",
-                "club_site", "contacts", "venue", "reg_service", "photo_id"]
-    missing = [k for k in required if k not in data]
+    reply = _reply_target(update)
+    required_text = ["date", "city", "event_name", "exhibition_block", "judges",
+                     "club_site", "contacts", "venue", "reg_service"]
+    missing = [k for k in required_text if k not in data]
     if missing:
-        await update.message.reply_text(
+        await reply.reply_text(
             f"Ошибка: не хватает данных: {missing}. Начни заново /start"
         )
         return ConversationHandler.END
 
+    has_photo = "photo_id" in data
+    no_photo = data.get("no_photo", False)
+    if not has_photo and not no_photo:
+        await reply.reply_text("Ошибка: нужно отправить фото или нажать «без фото». Начни заново /start")
+        return ConversationHandler.END
+
     text = build_post_text(data)
-    if len(text) > CAPTION_MAX:
-        await update.message.reply_text(
-            f"Текст поста получился {len(text)} символов. В Telegram подпись к фото — не больше {CAPTION_MAX} символов. Сократите поля и начните заново /start"
+    caption_limit = CAPTION_MAX if has_photo else 4096  # лимит обычного сообщения
+    if len(text) > caption_limit:
+        await reply.reply_text(
+            f"Текст поста получился {len(text)} символов. Лимит — {caption_limit}. Сократите поля и начните заново /start"
         )
         context.user_data.clear()
         return ConversationHandler.END
 
     user_id = update.effective_user.id if update.effective_user else None
     if CHANNEL_ID and user_id is not None and not _can_post(user_id):
-        await update.message.reply_text(
+        await reply.reply_text(
             "Один пост в канал можно отправить не чаще одного раза в 24 часа. Попробуйте позже."
         )
         context.user_data.clear()
         return ConversationHandler.END
 
-    photo_id = data["photo_id"]
-
     try:
         if CHANNEL_ID:
-            await context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=photo_id,
-                caption=text,
-            )
+            if has_photo:
+                await context.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=data["photo_id"],
+                    caption=text,
+                )
+            else:
+                await context.bot.send_message(chat_id=CHANNEL_ID, text=text)
             if user_id is not None:
                 _save_last_post(user_id)
-            await update.message.reply_text("✅ Пост опубликован в канал!")
+            await reply.reply_text("✅ Пост опубликован в канал!")
         else:
-            # если канал не настроен — показываем превью
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
-                photo=photo_id,
-                caption=text,
-            )
-            await update.message.reply_text(
+            if has_photo:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=data["photo_id"],
+                    caption=text,
+                )
+            else:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+            await reply.reply_text(
                 "Пост готов. Укажи CHANNEL_ID в настройках для публикации в канал."
             )
     except Exception as e:
         logger.exception("ошибка публикации")
-        await update.message.reply_text(f"❌ Ошибка: {e}")
+        await reply.reply_text(f"❌ Ошибка: {e}")
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -319,7 +352,14 @@ def main() -> None:
     if not BOT_TOKEN:
         raise ValueError("укажи BOT_TOKEN в переменных окружения")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    async def set_menu_commands(app: Application):
+        """добавляет /start (и /cancel) в контекстное меню бота"""
+        await app.bot.set_my_commands([
+            BotCommand("start", "Начать создание поста"),
+            BotCommand("cancel", "Отменить создание поста"),
+        ])
+
+    app = Application.builder().token(BOT_TOKEN).post_init(set_menu_commands).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -337,6 +377,7 @@ def main() -> None:
             REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_service)],
             PHOTO: [
                 MessageHandler(filters.PHOTO, photo),
+                CallbackQueryHandler(no_photo_callback, pattern="^post_no_photo$"),
                 # если пользователь шлёт текст вместо фото — напоминаем
                 MessageHandler(filters.TEXT & ~filters.COMMAND, _photo_reminder),
             ],
