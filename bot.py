@@ -64,7 +64,7 @@ logger = logging.getLogger(__name__)
     EDIT_VENUE,
     EDIT_REG_SERVICE,
     EDIT_PHOTO,
-) = range(20)
+) = range(21)
 
 # соответствие callback_data -> (state, prompt)
 EDIT_FIELDS = {
