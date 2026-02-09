@@ -115,7 +115,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """начало — сброс данных и первый вопрос"""
     context.user_data.clear()
     await update.message.reply_text(
-        "Привет! Я помогу оформить пост о выставке собак.\n\n"
+        "Привет! Я помогу оформить пост о выставке собак.\n"
+        "Чтобы прекратить создание поста, напиши /cancel.\n\n"
         "📅Отправь дату выставки (например: 1 и 2 января 2026 года)"
     )
     return DATE
