@@ -54,8 +54,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """начало — сброс данных и первый вопрос"""
     context.user_data.clear()
     await update.message.reply_text(
-        "Привет! Я помогу оформить пост о выставке собак.\n"
-        "Отправь дату выставки (например: 4 и 5 апреля 2026г.)"
+        "Привет! Я помогу оформить пост о выставке собак.\n\n"
+        "📅Отправь дату выставки (например: 1 и 2 января 2026 года)"
     )
     return DATE
 
@@ -77,7 +77,7 @@ async def city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def event_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["event_name"] = update.message.text.strip()
     await update.message.reply_text(
-        "Укажи название и блок выставок (например: Земля Кочевников -1,2)"
+        "Укажи название и блок выставок"
     )
     return EXHIBITION_BLOCK
 
@@ -98,7 +98,7 @@ async def judges(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def club_site(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["club_site"] = update.message.text.strip()
-    await update.message.reply_text("📞 Контакты (телефон, telegram, whatsapp)")
+    await update.message.reply_text("📞 Контакты (телефон / telegram / email)")
     return CONTACTS
 
 
