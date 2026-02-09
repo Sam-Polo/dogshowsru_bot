@@ -1,0 +1,32 @@
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# environment
+.env
+.env.local
+*.env
+
+# ide
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# docker
+*.log
+
+# misc
+.DS_Store
+Thumbs.db
