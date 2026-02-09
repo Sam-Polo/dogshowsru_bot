@@ -332,7 +332,7 @@ def _reply_target(update: Update):
 
 
 def _confirm_edit_keyboard() -> InlineKeyboardMarkup:
-    """кнопки выбора поля для редактирования"""
+    """кнопки выбора поля для редактирования + Назад"""
     buttons = [
         [InlineKeyboardButton("📅 Дата", callback_data="edit_date")],
         [InlineKeyboardButton("📍 Город", callback_data="edit_city")],
@@ -344,6 +344,7 @@ def _confirm_edit_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🏛 Место проведения", callback_data="edit_venue")],
         [InlineKeyboardButton("🌐 Сервис регистрации", callback_data="edit_reg_service")],
         [InlineKeyboardButton("📷 Фото", callback_data="edit_photo")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="confirm_back")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -355,17 +356,31 @@ async def confirm_send_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def confirm_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """показать выбор поля для редактирования"""
+    """показать выбор поля — редактируем то же сообщение (воронка в одном сообщении)"""
     await update.callback_query.answer()
-    await update.effective_message.reply_text(
+    await update.callback_query.edit_message_text(
         "Что изменить?",
         reply_markup=_confirm_edit_keyboard(),
     )
     return CONFIRM
 
 
+async def confirm_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """кнопка «Назад» — вернуть в сообщении кнопки Отправить / Изменить"""
+    await update.callback_query.answer()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Отправить", callback_data="confirm_send")],
+        [InlineKeyboardButton("✏️ Изменить", callback_data="confirm_edit")],
+    ])
+    await update.callback_query.edit_message_text(
+        "Так будет выглядеть пост. Нужно что-то изменить?",
+        reply_markup=keyboard,
+    )
+    return CONFIRM
+
+
 async def confirm_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """нажатие на конкретное поле для правки — переходим в состояние редактирования"""
+    """выбор поля для правки — редактируем то же сообщение, показываем запрос ввода"""
     await update.callback_query.answer()
     data = update.callback_query.data
     if data not in EDIT_FIELDS:
@@ -375,14 +390,14 @@ async def confirm_edit_field_callback(update: Update, context: ContextTypes.DEFA
         keyboard = InlineKeyboardMarkup.from_button(
             InlineKeyboardButton("❌ Без фото", callback_data="post_no_photo")
         )
-        await update.effective_message.reply_text(prompt, reply_markup=keyboard)
+        await update.callback_query.edit_message_text(prompt, reply_markup=keyboard)
     else:
-        await update.effective_message.reply_text(prompt)
+        await update.callback_query.edit_message_text(prompt)
     return state
 
 
 def _make_edit_text_handler(field_key: str, state: int):
-    """фабрика: обработчик ввода при редактировании одного текстового поля"""
+    """фабрика: после ввода нового значения — два новых сообщения (превью + управление)"""
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         val = update.message.text.strip()
         ok, err = _check_field_length(field_key, val)
@@ -390,28 +405,24 @@ def _make_edit_text_handler(field_key: str, state: int):
             await update.message.reply_text(err)
             return state
         context.user_data[field_key] = val
-        await update.message.reply_text("Изменено. Проверьте пост.")
         return await _send_confirm_screen(update, context)
     return handler
 
 
 async def edit_photo_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """принятие фото при редактировании поля «фото»"""
+    """принятие фото при редактировании — затем два новых сообщения (превью + управление)"""
     if "photo_id" in context.user_data:
-        await update.message.reply_text("Фото уже добавлено. Показываю превью.")
         return await _send_confirm_screen(update, context)
     context.user_data["photo_id"] = update.message.photo[-1].file_id
     context.user_data.pop("no_photo", None)
-    await update.message.reply_text("Изменено. Проверьте пост.")
     return await _send_confirm_screen(update, context)
 
 
 async def edit_photo_no_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """кнопка «без фото» при редактировании"""
+    """кнопка «без фото» при редактировании — затем два новых сообщения"""
     await update.callback_query.answer()
     context.user_data["no_photo"] = True
     context.user_data.pop("photo_id", None)
-    await update.effective_message.reply_text("Изменено. Проверьте пост.")
     return await _send_confirm_screen(update, context)
 
 
@@ -525,6 +536,7 @@ def main() -> None:
             CONFIRM: [
                 CallbackQueryHandler(confirm_send_callback, pattern="^confirm_send$"),
                 CallbackQueryHandler(confirm_edit_callback, pattern="^confirm_edit$"),
+                CallbackQueryHandler(confirm_back_callback, pattern="^confirm_back$"),
                 CallbackQueryHandler(confirm_edit_field_callback, pattern="^edit_"),
             ],
             EDIT_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("date", EDIT_DATE))],
