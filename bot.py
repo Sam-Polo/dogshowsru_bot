@@ -17,7 +17,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import BOT_TOKEN, CHANNEL_ID
+from config import BOT_TOKEN, CHANNEL_ID, ADMIN_IDS
 
 # лимиты символов на поле (с запасом), итоговый caption в Telegram — до 1024
 FIELD_LIMITS = {
@@ -79,7 +79,9 @@ def _save_last_post(user_id: int) -> None:
 
 
 def _can_post(user_id: int) -> bool:
-    """можно ли пользователю отправить пост (прошло ли 24ч с последнего)"""
+    """можно ли пользователю отправить пост (прошло ли 24ч с последнего); админы без ограничения"""
+    if user_id in ADMIN_IDS:
+        return True
     data = _load_last_posts()
     last = data.get(str(user_id))
     if last is None:
