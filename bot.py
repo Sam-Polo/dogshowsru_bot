@@ -194,7 +194,7 @@ async def city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return CITY
     context.user_data["city"] = val
     await update.message.reply_text(
-        "🐕 Напиши название выставки (например: ИНТЕРНАЦИОНАЛЬНАЯ ВЫСТАВКА СОБАК):"
+        "🐕 Напиши название выставки (например: САС-ЧРКФ с ОС или САС-ЧФ и тп):"
     )
     return EVENT_NAME
 
@@ -207,7 +207,7 @@ async def event_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return EVENT_NAME
     context.user_data["event_name"] = val
     await update.message.reply_text(
-        "Укажи название и блок выставок"
+        "Укажи название и блок выставок (например САС-ЧФ + САС 1,2 гр + моно):"
     )
     return EXHIBITION_BLOCK
 
