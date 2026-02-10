@@ -170,7 +170,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Привет! Я помогу оформить пост о выставке собак.\n"
         "Чтобы прекратить создание поста, напиши /cancel.\n\n"
-        "📅Отправь дату выставки (например: 1 и 2 января 2026 года)"
+        "📅Отправь дату выставки (например: 1 и 2 января 2026 года):"
     )
     return DATE
 
@@ -182,7 +182,7 @@ async def date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(err)
         return DATE
     context.user_data["date"] = val
-    await update.message.reply_text("📍 Укажи город и страну (например: Алмата, Казахстан)")
+    await update.message.reply_text("📍 Укажи город и страну (например: Алмата, Казахстан):")
     return CITY
 
 
@@ -194,7 +194,7 @@ async def city(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return CITY
     context.user_data["city"] = val
     await update.message.reply_text(
-        "🐕 Напиши название выставки (например: ИНТЕРНАЦИОНАЛЬНАЯ ВЫСТАВКА СОБАК)"
+        "🐕 Напиши название выставки (например: ИНТЕРНАЦИОНАЛЬНАЯ ВЫСТАВКА СОБАК):"
     )
     return EVENT_NAME
 
@@ -220,7 +220,7 @@ async def exhibition_block(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return EXHIBITION_BLOCK
     context.user_data["exhibition_block"] = val
     await update.message.reply_text(
-        "👨‍⚖️ Укажи судей (каждый с новой строки или через запятую)"
+        "👨‍⚖️ Укажи судей (каждый с новой строки или через запятую):"
     )
     return JUDGES
 
@@ -232,7 +232,7 @@ async def judges(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(err)
         return JUDGES
     context.user_data["judges"] = val
-    await update.message.reply_text("🌐 Ссылка на сайт/чат клуба (например: t.me/...)")
+    await update.message.reply_text("🌐 Ссылка на сайт/чат клуба (например: t.me/...):")
     return CLUB_SITE
 
 
@@ -243,7 +243,7 @@ async def club_site(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(err)
         return CLUB_SITE
     context.user_data["club_site"] = val
-    await update.message.reply_text("📞 Контакты (телефон / telegram / email)")
+    await update.message.reply_text("📞 Контакты (телефон / telegram / email):")
     return CONTACTS
 
 
@@ -254,7 +254,7 @@ async def contacts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(err)
         return CONTACTS
     context.user_data["contacts"] = val
-    await update.message.reply_text("🏛 Место проведения (адрес)")
+    await update.message.reply_text("🏛 Место проведения (адрес):")
     return VENUE
 
 
@@ -265,7 +265,7 @@ async def venue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(err)
         return VENUE
     context.user_data["venue"] = val
-    await update.message.reply_text("🌐 Сервис регистрации (например: zooportal.pro)")
+    await update.message.reply_text("🌐 Сервис регистрации:")
     return REG_SERVICE
 
 
