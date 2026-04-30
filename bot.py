@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -533,63 +534,66 @@ def main() -> None:
 
     logger.info("event=bot_start version=%s", APP_VERSION)
 
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .connect_timeout(20)
-        .read_timeout(30)
-        .write_timeout(30)
-        .pool_timeout(30)
-        .post_init(set_menu_commands)
-        .build()
-    )
+    def build_application() -> Application:
+        app = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .connect_timeout(20)
+            .read_timeout(30)
+            .write_timeout(30)
+            .pool_timeout(30)
+            .post_init(set_menu_commands)
+            .build()
+        )
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, date)],
-            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, city)],
-            EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, event_name)],
-            EXHIBITION_BLOCK: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, exhibition_block)
-            ],
-            JUDGES: [MessageHandler(filters.TEXT & ~filters.COMMAND, judges)],
-            CLUB_SITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, club_site)],
-            CONTACTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, contacts)],
-            VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, venue)],
-            REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_service)],
-            PHOTO: [
-                MessageHandler(filters.PHOTO, photo),
-                CallbackQueryHandler(no_photo_callback, pattern="^post_no_photo$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, _photo_reminder),
-            ],
-            CONFIRM: [
-                CallbackQueryHandler(confirm_send_callback, pattern="^confirm_send$"),
-                CallbackQueryHandler(confirm_edit_callback, pattern="^confirm_edit$"),
-                CallbackQueryHandler(confirm_back_callback, pattern="^confirm_back$"),
-                CallbackQueryHandler(confirm_edit_field_callback, pattern="^edit_"),
-            ],
-            EDIT_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("date", EDIT_DATE))],
-            EDIT_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("city", EDIT_CITY))],
-            EDIT_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("event_name", EDIT_EVENT_NAME))],
-            EDIT_EXHIBITION_BLOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("exhibition_block", EDIT_EXHIBITION_BLOCK))],
-            EDIT_JUDGES: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("judges", EDIT_JUDGES))],
-            EDIT_CLUB_SITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("club_site", EDIT_CLUB_SITE))],
-            EDIT_CONTACTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("contacts", EDIT_CONTACTS))],
-            EDIT_VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("venue", EDIT_VENUE))],
-            EDIT_REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("reg_service", EDIT_REG_SERVICE))],
-            EDIT_PHOTO: [
-                MessageHandler(filters.PHOTO, edit_photo_receive),
-                CallbackQueryHandler(edit_photo_no_photo_callback, pattern="^post_no_photo$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, _edit_photo_reminder),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    app.add_handler(conv_handler)
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("start", start)],
+            states={
+                DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, date)],
+                CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, city)],
+                EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, event_name)],
+                EXHIBITION_BLOCK: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, exhibition_block)
+                ],
+                JUDGES: [MessageHandler(filters.TEXT & ~filters.COMMAND, judges)],
+                CLUB_SITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, club_site)],
+                CONTACTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, contacts)],
+                VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, venue)],
+                REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_service)],
+                PHOTO: [
+                    MessageHandler(filters.PHOTO, photo),
+                    CallbackQueryHandler(no_photo_callback, pattern="^post_no_photo$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, _photo_reminder),
+                ],
+                CONFIRM: [
+                    CallbackQueryHandler(confirm_send_callback, pattern="^confirm_send$"),
+                    CallbackQueryHandler(confirm_edit_callback, pattern="^confirm_edit$"),
+                    CallbackQueryHandler(confirm_back_callback, pattern="^confirm_back$"),
+                    CallbackQueryHandler(confirm_edit_field_callback, pattern="^edit_"),
+                ],
+                EDIT_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("date", EDIT_DATE))],
+                EDIT_CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("city", EDIT_CITY))],
+                EDIT_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("event_name", EDIT_EVENT_NAME))],
+                EDIT_EXHIBITION_BLOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("exhibition_block", EDIT_EXHIBITION_BLOCK))],
+                EDIT_JUDGES: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("judges", EDIT_JUDGES))],
+                EDIT_CLUB_SITE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("club_site", EDIT_CLUB_SITE))],
+                EDIT_CONTACTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("contacts", EDIT_CONTACTS))],
+                EDIT_VENUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("venue", EDIT_VENUE))],
+                EDIT_REG_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, _make_edit_text_handler("reg_service", EDIT_REG_SERVICE))],
+                EDIT_PHOTO: [
+                    MessageHandler(filters.PHOTO, edit_photo_receive),
+                    CallbackQueryHandler(edit_photo_no_photo_callback, pattern="^post_no_photo$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, _edit_photo_reminder),
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )
+        app.add_handler(conv_handler)
+        return app
 
     while True:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        app = build_application()
         try:
             app.run_polling(
                 allowed_updates=Update.ALL_TYPES,
