@@ -589,18 +589,21 @@ def main() -> None:
 
     app.add_handler(conv_handler)
 
-    try:
-        app.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            bootstrap_retries=-1,
-        )
-    except (TimedOut, NetworkError) as e:
-        logger.exception(
-            "event=bot_network_fatal version=%s error_type=%s",
-            APP_VERSION,
-            e.__class__.__name__,
-        )
-        raise
+    while True:
+        try:
+            app.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                bootstrap_retries=-1,
+            )
+            break
+        except (TimedOut, NetworkError) as e:
+            logger.warning(
+                "event=bot_network_retry version=%s error_type=%s retry_in_sec=%s",
+                APP_VERSION,
+                e.__class__.__name__,
+                15,
+            )
+            time.sleep(15)
 
 
 if __name__ == "__main__":
