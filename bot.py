@@ -3,10 +3,14 @@
 """
 import json
 import logging
+import os
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -34,11 +38,27 @@ FIELD_LIMITS = {
 CAPTION_MAX = 1024
 POST_COOLDOWN_SEC = 24 * 3600  # 1 раз в сутки
 LAST_POSTS_FILE = Path(__file__).resolve().parent / "last_posts.json"
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+
+class MoscowTimeFormatter(logging.Formatter):
+    """форматтер логов с временем по москве"""
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=ZoneInfo("Europe/Moscow"))
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat(timespec="seconds")
+
+
+_root_logger = logging.getLogger()
+_root_logger.setLevel(logging.INFO)
+_root_logger.handlers.clear()
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(
+    MoscowTimeFormatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 )
+_root_logger.addHandler(_stream_handler)
 logger = logging.getLogger(__name__)
 
 # состояния диалога
@@ -511,7 +531,18 @@ def main() -> None:
             BotCommand("cancel", "Отменить создание поста"),
         ])
 
-    app = Application.builder().token(BOT_TOKEN).post_init(set_menu_commands).build()
+    logger.info("event=bot_start version=%s", APP_VERSION)
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .connect_timeout(20)
+        .read_timeout(30)
+        .write_timeout(30)
+        .pool_timeout(30)
+        .post_init(set_menu_commands)
+        .build()
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -558,7 +589,18 @@ def main() -> None:
 
     app.add_handler(conv_handler)
 
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            bootstrap_retries=-1,
+        )
+    except (TimedOut, NetworkError) as e:
+        logger.exception(
+            "event=bot_network_fatal version=%s error_type=%s",
+            APP_VERSION,
+            e.__class__.__name__,
+        )
+        raise
 
 
 if __name__ == "__main__":
