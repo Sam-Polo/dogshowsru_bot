@@ -517,7 +517,14 @@ async def finish_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
-    await update.message.reply_text("Отменено. /start — начать заново.")
+    try:
+        await update.message.reply_text("Отменено. /start — начать заново.")
+    except (TimedOut, NetworkError) as e:
+        logger.warning(
+            "event=cancel_reply_timeout version=%s error_type=%s",
+            APP_VERSION,
+            e.__class__.__name__,
+        )
     return ConversationHandler.END
 
 
@@ -531,6 +538,22 @@ def main() -> None:
             BotCommand("start", "Начать создание поста"),
             BotCommand("cancel", "Отменить создание поста"),
         ])
+
+    async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """глобальный обработчик ошибок, чтобы не терять управление при сетевых сбоях"""
+        err = context.error
+        if isinstance(err, (TimedOut, NetworkError)):
+            logger.warning(
+                "event=update_network_timeout version=%s error_type=%s",
+                APP_VERSION,
+                err.__class__.__name__,
+            )
+            return
+        logger.exception(
+            "event=update_unhandled_error version=%s error_type=%s",
+            APP_VERSION,
+            err.__class__.__name__ if err else "UnknownError",
+        )
 
     logger.info("event=bot_start version=%s", APP_VERSION)
 
@@ -589,6 +612,7 @@ def main() -> None:
             fallbacks=[CommandHandler("cancel", cancel)],
         )
         app.add_handler(conv_handler)
+        app.add_error_handler(on_error)
         return app
 
     while True:
