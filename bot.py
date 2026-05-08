@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import time
-import asyncio
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import BOT_TOKEN, CHANNEL_ID, ADMIN_IDS
+from config import BOT_TOKEN, CHANNEL_ID, ADMIN_IDS, TELEGRAM_PROXY
 
 # лимиты символов на поле (с запасом), итоговый caption в Telegram — до 1024
 FIELD_LIMITS = {
@@ -558,7 +557,7 @@ def main() -> None:
     logger.info("event=bot_start version=%s", APP_VERSION)
 
     def build_application() -> Application:
-        app = (
+        builder = (
             Application.builder()
             .token(BOT_TOKEN)
             .connect_timeout(20)
@@ -566,8 +565,12 @@ def main() -> None:
             .write_timeout(30)
             .pool_timeout(30)
             .post_init(set_menu_commands)
-            .build()
         )
+        if TELEGRAM_PROXY:
+            # прокси нужен из-за блокировки telegram api с рф ip
+            builder = builder.proxy(TELEGRAM_PROXY).get_updates_proxy(TELEGRAM_PROXY)
+            logger.info("event=proxy_enabled version=%s", APP_VERSION)
+        app = builder.build()
 
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start)],
@@ -615,23 +618,11 @@ def main() -> None:
         app.add_error_handler(on_error)
         return app
 
-    while True:
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        app = build_application()
-        try:
-            app.run_polling(
-                allowed_updates=Update.ALL_TYPES,
-                bootstrap_retries=-1,
-            )
-            break
-        except (TimedOut, NetworkError) as e:
-            logger.warning(
-                "event=bot_network_retry version=%s error_type=%s retry_in_sec=%s",
-                APP_VERSION,
-                e.__class__.__name__,
-                15,
-            )
-            time.sleep(15)
+    app = build_application()
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        bootstrap_retries=-1,
+    )
 
 
 if __name__ == "__main__":

@@ -18,3 +18,7 @@ def _parse_admin_ids() -> set[int]:
 
 
 ADMIN_IDS = _parse_admin_ids()
+
+# прокси для запросов к telegram api (обходит блокировку с рф ip)
+# формат: http://user:pass@host:port  или  socks5://user:pass@host:port
+TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "").strip() or None
