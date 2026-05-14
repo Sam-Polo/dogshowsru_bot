@@ -581,6 +581,7 @@ def main() -> None:
 
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", start)],
+            allow_reentry=True,
             states={
                 DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, date)],
                 CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, city)],
