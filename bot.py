@@ -18,6 +18,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
     ContextTypes,
+    TypeHandler,
     filters,
 )
 
@@ -186,6 +187,12 @@ async def _send_confirm_screen(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """начало — сброс данных и первый вопрос"""
+    user = update.effective_user
+    logger.info(
+        "event=start_handler user_id=%s username=%s",
+        user.id if user else None,
+        user.username if user else None,
+    )
     context.user_data.clear()
     await update.message.reply_text(
         "Привет! Я помогу оформить пост о выставке собак.\n"
@@ -614,6 +621,22 @@ def main() -> None:
             },
             fallbacks=[CommandHandler("cancel", cancel)],
         )
+        async def log_any_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            """диагностика: логируем все апдейты до основных хендлеров"""
+            msg_text = None
+            if update.message and update.message.text:
+                msg_text = update.message.text[:60]
+            cb_data = update.callback_query.data if update.callback_query else None
+            user = update.effective_user
+            logger.info(
+                "event=update_received update_id=%s user_id=%s text=%r callback=%r",
+                update.update_id,
+                user.id if user else None,
+                msg_text,
+                cb_data,
+            )
+
+        app.add_handler(TypeHandler(Update, log_any_update), group=-1)
         app.add_handler(conv_handler)
         app.add_error_handler(on_error)
         return app
